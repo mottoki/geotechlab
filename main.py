@@ -60,31 +60,31 @@ if uploaded_file is not None:
     holeid_selection = st.sidebar.multiselect(
         "Hole ID", (holeid))
 
-    ex_or_in = st.sidebar.radio("Exclude or Include",
-        ('Exclude', 'Include'), horizontal=True),
+    # ex_or_in = st.sidebar.radio("Exclude or Include",
+    #     ('Exclude', 'Include'), horizontal=True),
 
     testtype_selection = st.sidebar.multiselect(
         "Test type", (sampletype))
 
-    ex_or_in_testtype = st.sidebar.radio("Exclude or Include",
-        ('exclude', 'include'), horizontal=True),
+    # ex_or_in_testtype = st.sidebar.radio("Exclude or Include",
+    #     ('exclude', 'include'), horizontal=True),
 
     failuremode_selection = st.sidebar.multiselect(
         "Failure Mode", (failure_mode))
 
     # Filter
     if rock_selection: df = df[df['Rock Type'].isin(rock_selection)]
-    if holeid_selection:
-        if ex_or_in[0] == 'Exclude':
-            df = df[~df['HoleID'].isin(holeid_selection)]
-        else:
-            df = df[df['HoleID'].isin(holeid_selection)]
+    if holeid_selection: df = df[df['HoleID'].isin(holeid_selection)]
+        # if ex_or_in[0] == 'Exclude':
+        #     df = df[~df['HoleID'].isin(holeid_selection)]
+        # else:
+        #     df = df[df['HoleID'].isin(holeid_selection)]
 
-    if testtype_selection:
-        if ex_or_in_testtype[0] == 'exclude':
-            df = df[~df['SampleType'].isin(testtype_selection)]
-        else:
-            df = df[df['SampleType'].isin(testtype_selection)]
+    if testtype_selection: df = df[df['SampleType'].isin(testtype_selection)]
+        # if ex_or_in_testtype[0] == 'exclude':
+        #     df = df[~df['SampleType'].isin(testtype_selection)]
+        # else:
+        #     df = df[df['SampleType'].isin(testtype_selection)]
 
     if failuremode_selection: df = df[df['Failure Mode'].isin(failuremode_selection)]
 
@@ -99,7 +99,7 @@ if df is not None:
     # ------------ DST -------------------
     with tab1:
         # Selections
-        st.header("DST")
+        # st.header("DST")
 
         df1 = df[df['TestType']=='SSDS']
 
@@ -253,6 +253,54 @@ if df is not None:
                 else:
                     manual_val_1 = np.nan
 
+            # from bokeh.plotting import figure
+            # from bokeh.models import ColumnDataSource, CustomJS
+
+            # # import function
+            # from streamlit_bokeh_events import streamlit_bokeh_events
+
+            # # create plot
+            # p = figure(tools="lasso_select")
+            # colormap = {
+            #     'Remold': 'orange',
+            #     'Joint': 'blue'}
+            # df['colors'] = df['Shear Plane Type'].map(colormap)
+            # xx = df['NormalStress'].tolist()
+            # yy = df['ShearStress'].tolist()
+            # # colors = df['colors'].tolist()
+            # cds = ColumnDataSource(
+            #     data={
+            #         "x": xx,
+            #         "y": yy,
+            #     }
+            # )
+            # p.circle("x", "y", source=cds)
+            # # p.scatter('NormalStress', 'ShearStress', source=df, color='colors')
+
+            # # # define events
+            # cds.selected.js_on_change(
+            #     "indices",
+            #     CustomJS(
+            #         args=dict(source=cds),
+            #         code="""
+            #         document.dispatchEvent(
+            #             new CustomEvent("YOUR_EVENT_NAME", {detail: {your_data: "goes-here"}})
+            #         )
+            #         """
+            #     )
+            # )
+            # result = streamlit_bokeh_events(
+            #     bokeh_plot=p,
+            #     events="YOUR_EVENT_NAME",
+            #     key="foo",
+            #     refresh_on_update=False,
+            #     override_height=600,
+            #     debounce_time=500)
+
+            # # use the result
+            # st.write(result)
+
+            # st.bokeh_chart(p, use_container_width=True)
 
             figd = px.scatter(
                 df1, x="NormalStress", y="ShearStress",
@@ -281,19 +329,23 @@ if df is not None:
             figd.update_layout(
                 title_text=f"No. of Data: {num_dst}",
                 plot_bgcolor='#FFFFFF',
-                paper_bgcolor='#FFFFFF',)
+                paper_bgcolor='#FFFFFF',
+                height=550,)
+
             figd.update_xaxes(title_text='Normal Stress', gridcolor='lightgrey',
-                zeroline=True, zerolinewidth=2, zerolinecolor='black')
+                zeroline=True, zerolinewidth=3, zerolinecolor='lightgrey',
+                tickformat=",.0f")
             figd.update_yaxes(title_text='Shear Stress', gridcolor='lightgrey',
-                zeroline=True, zerolinewidth=2, zerolinecolor='black')
+                zeroline=True, zerolinewidth=3, zerolinecolor='lightgrey',
+                tickformat=",.0f")
             figd.add_shape(
                 type="rect", xref="paper", yref="paper",
                 x0=0, y0=0, x1=1.0, y1=1.0,
-                line=dict(color="black", width=1))
+                line=dict(color="black", width=2))
 
             # Table
             dst_summary = pd.DataFrame(columns=[" ", val_1, val_2, "R squared"])
-            to_append = ["Auto Fit - Mean", auto_c, auto_f, r_sq_dst]
+            to_append = ["Auto Fit - Mean", int(auto_c), int(auto_f), r_sq_dst]
             new_row = len(dst_summary)
             dst_summary.loc[new_row] = to_append
             to_append = ["Auto Fit - STD", sd_c, sd_f, np.nan]
@@ -394,7 +446,7 @@ if df is not None:
         method_selection = ('Hoek Calculation', 'Scipy Curve Fit')
         calc_selection = ('All data', 'HTX + UCS(mean)', 'HTX only')
 
-        st.header("UCS and Rock TXL")
+        # st.header("UCS and Rock TXL")
         du = df[df['TestType'].isin(['Uniax', 'Triax', 'Brazilian'])]
         du = du[du['Sigma3'].notna()]
         du = du[du['PeakSigma1'].notna()]
@@ -525,14 +577,14 @@ if df is not None:
                     line=dict(color=colors[2])))
 
             # Table - Auto Fit
-            ucs_summary = pd.DataFrame(columns=["Method", "Sigci", "Mi", "Tensile Cutoff", "R squared"])
-            to_append = [f"Auto Fit: {calc_method} - {calc_data}", auto_sigci, auto_mi, -c_tens, r_sq_c]
+            ucs_summary = pd.DataFrame(columns=["Method", "Sigci", "mi", "Tensile Cutoff", "R squared"])
+            to_append = [f"Auto Fit: {calc_method} - {calc_data}", int(auto_sigci), int(auto_mi), -c_tens, r_sq_c]
             new_row = len(ucs_summary)
             ucs_summary.loc[new_row] = to_append
 
             # Table - Linear Regression
             linear_summary = pd.DataFrame(columns=["Method", "Cohesion", "Phi", "STD"])
-            to_append = [f"Linear Regression", t_coh, t_fri, r_sq_l]
+            to_append = [f"Linear Regression", int(t_coh), int(t_fri), r_sq_l]
             new_row = len(linear_summary)
             linear_summary.loc[new_row] = to_append
 
@@ -602,15 +654,19 @@ if df is not None:
             figu.update_layout(
                     title_text=f"No. of Data: {num_ucs}",
                     plot_bgcolor='#FFFFFF',
-                    paper_bgcolor='#FFFFFF',)
+                    paper_bgcolor='#FFFFFF',
+                    height=550)
+
+            figu.update_xaxes(title_text='Sigma 3', gridcolor='lightgrey',
+                zeroline=True, zerolinewidth=3, zerolinecolor='lightgrey',
+                tickformat=",.0f")
+            figu.update_yaxes(title_text='Peak Sigma 1', gridcolor='lightgrey',
+                zeroline=True, zerolinewidth=3, zerolinecolor='lightgrey',
+                tickformat=",.0f")
             figu.add_shape(
                 type="rect", xref="paper", yref="paper",
                 x0=0, y0=0, x1=1.0, y1=1.0,
-                line=dict(color="black", width=1))
-            figu.update_xaxes(title_text='Sigma 3', gridcolor='lightgrey',
-                zeroline=True, zerolinewidth=2, zerolinecolor='black')
-            figu.update_yaxes(title_text='Peak Sigma 1', gridcolor='lightgrey',
-                zeroline=True, zerolinewidth=2, zerolinecolor='black')
+                line=dict(color="black", width=2))
 
         else:
             figu = go.Figure().add_annotation(
