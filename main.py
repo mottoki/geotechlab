@@ -5,8 +5,13 @@ import plotly.graph_objs as go
 import plotly.express as px
 from scipy.optimize import curve_fit
 
-from numpy import sin, cos, tan, arcsin, arccos, arctan, radians, degrees, sqrt, diag
+from numpy import sin, cos, tan, arcsin, arccos, arctan, radians, degrees, sqrt, diag, log10
 
+from streamlit_option_menu import option_menu
+
+from bokeh.plotting import figure
+from bokeh.models import ColumnDataSource, HoverTool, LinearColorMapper, Band
+import bokeh.models as bmo
 
 # ------------------ INPUT --------------------------------
 base_colors = {
@@ -22,8 +27,12 @@ hide_table_row_index = """
     <style>
     thead tr th:first-child {display:none}
     tbody th {display:none}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
     </style>
     """
+
+colors = px.colors.qualitative.T10
 
 st.markdown(hide_table_row_index, unsafe_allow_html=True)
 
@@ -46,70 +55,49 @@ if uploaded_file is not None:
     # Can be used wherever a "file-like" object is accepted:
     df = pd.read_csv(uploaded_file)
 
-    rock_type = set(df['Rock Type'])
-    holeid = set(df['HoleID'])
-    sampletype = set(df['SampleType'])
-    teststage = (x for x in set(df['TestStage']) if np.isnan(x) == False)
-    shear_type = set(df['Shear Plane Type'])
-    failure_mode = set(df['Failure Mode'])
-
-    # Selections
-    rock_selection = st.sidebar.multiselect(
-        "Rock Type", (rock_type))
-
-    holeid_selection = st.sidebar.multiselect(
-        "Hole ID", (holeid))
-
-    # ex_or_in = st.sidebar.radio("Exclude or Include",
-    #     ('Exclude', 'Include'), horizontal=True),
-
-    testtype_selection = st.sidebar.multiselect(
-        "Test type", (sampletype))
-
-    # ex_or_in_testtype = st.sidebar.radio("Exclude or Include",
-    #     ('exclude', 'include'), horizontal=True),
-
-    failuremode_selection = st.sidebar.multiselect(
-        "Failure Mode", (failure_mode))
-
-    # Filter
-    if rock_selection: df = df[df['Rock Type'].isin(rock_selection)]
-    if holeid_selection: df = df[df['HoleID'].isin(holeid_selection)]
-        # if ex_or_in[0] == 'Exclude':
-        #     df = df[~df['HoleID'].isin(holeid_selection)]
-        # else:
-        #     df = df[df['HoleID'].isin(holeid_selection)]
-
-    if testtype_selection: df = df[df['SampleType'].isin(testtype_selection)]
-        # if ex_or_in_testtype[0] == 'exclude':
-        #     df = df[~df['SampleType'].isin(testtype_selection)]
-        # else:
-        #     df = df[df['SampleType'].isin(testtype_selection)]
-
-    if failuremode_selection: df = df[df['Failure Mode'].isin(failuremode_selection)]
+    fig_selection = ['Plotly', 'Bokeh']
+    fig_method = st.sidebar.radio("Figure type",
+        fig_selection, horizontal=True)
 
 else:
     df = None
 
 if df is not None:
     # -------------------- Tabs -----------------------------------------------
-    tab1, tab2 = st.tabs(["Defect Shear Strength", "Rockmass Shear Strength"])
-    colors = px.colors.qualitative.T10
+    # tab1, tab2 = st.tabs(["Defect Shear Strength", "Rockmass Shear Strength"])
+    options = ['Defect Shear Strength', 'Rockmass Shear Strength']
+    selected = option_menu(
+        menu_title=None,
+        options=options,
+        default_index=0, orientation='horizontal')
 
     # ------------ DST -------------------
-    with tab1:
+    # with tab1:
+    if selected ==options[0]:
         # Selections
         # st.header("DST")
 
-        df1 = df[df['TestType']=='SSDS']
+        df1 = df[df['SampleType']=='DST']
 
         # Additional Filter
         if len(df1)>0:
-            teststage_selection = st.sidebar.multiselect(
-                "Test Stage", (teststage))
+            rock_type = set(df1['Rock Type'])
+            rock_selection = st.sidebar.multiselect("Rock Type", (rock_type))
+            if rock_selection: df1 = df1[df1['Rock Type'].isin(rock_selection)]
 
-            sheartype_selection = st.sidebar.multiselect(
-                "Shear Plane Type", (shear_type))
+            holeid = set(df1['HoleID'])
+            holeid_selection = st.sidebar.multiselect("Hole ID", (holeid))
+            if holeid_selection: df1 = df1[df1['HoleID'].isin(holeid_selection)]
+
+            sampletype = set(df1['SampleType'])
+            testtype_selection = st.sidebar.multiselect("Test type", (sampletype))
+            if testtype_selection: df1 = df1[df1['SampleType'].isin(testtype_selection)]
+
+            teststage = (x for x in set(df1['TestStage']) if np.isnan(x) == False)
+            teststage_selection = st.sidebar.multiselect("Test Stage", (teststage))
+
+            shear_type = set(df1['Shear Plane Type'])
+            sheartype_selection = st.sidebar.multiselect("Shear Plane Type", (shear_type))
 
             if teststage_selection: df1 = df1[df1['TestStage'].isin(teststage_selection)]
             if sheartype_selection: df1 = df1[df1['Shear Plane Type'].isin(sheartype_selection)]
@@ -118,16 +106,18 @@ if df is not None:
         y = df1["ShearStress"]
 
         col4, col5 = st.columns(2)
+
+        fit_selection = ('Linear', 'Barton Bandis', 'Power')
         with col4:
             fitmethod = st.radio("Auto Fit Method",
-                ('Linear', 'Power'), horizontal=True)
+                fit_selection, horizontal=True)
         with col5:
             colormethod_d = st.radio("Color By",
                 ('Shear Plane Type', 'Rock Type', 'HoleID', 'TestStage'),
                 horizontal=True)
 
         if len(x) > 0:
-            if fitmethod == 'Linear':
+            if fitmethod == fit_selection[0]:
 
                 # Auto Fit
                 params, params_covariance = curve_fit(weakfunc, x, y)
@@ -189,7 +179,90 @@ if df is not None:
                 else:
                     manual_val_1 = np.nan
 
-            elif fitmethod == 'Power':
+            # Barton Bandis:
+            elif fitmethod == fit_selection[1]:
+                col1, col2 = st.columns(2)
+                with col1:
+                        inp_jrc = st.number_input('Enter jrc', value=2.5)
+                with col2:
+                        inp_jcs = st.number_input('Enter jcs', value=100)
+
+                def bartonbandis(x, phir):
+                    return x * tan(radians(phir + inp_jrc * log10(inp_jcs / x)))
+                # Auto Fit
+                params, params_covariance = curve_fit(bartonbandis, x, y, bounds=((0),(90)))
+
+                auto_phir = params[0] # automatic phir, jrc, jcs
+                # signmin = 10**(log10(inp_jcs)-((70-auto_phir)/inp_jrc))
+                # print(auto_phir, signmin)
+                # R squated Calculation
+                residuals = y - bartonbandis(x,*params)
+                ss_res = np.sum(residuals**2)
+                ss_tot = np.sum((y-np.mean(y))**2)
+                r_sq_dst = 1 - (ss_res/ss_tot)
+
+                x_line = np.arange(1, max(x), 1)
+                fit_curve = pd.DataFrame({'x_line':x_line})
+                fit_curve['y_line'] = fit_curve.apply(lambda x_l: bartonbandis(x_l,auto_phir))
+
+                # One standard deviation
+                sd_phir = sqrt(diag(params_covariance)[0])
+                phir_sd_low = auto_phir - sd_phir
+                # jrc_sd_low = auto_jrc - sd_jrc
+                # jcs_sd_low = auto_jcs - sd_jcs
+                sd_low_curve = pd.DataFrame({'x_line':x_line})
+                sd_low_curve['y_line'] = sd_low_curve.apply(lambda x_l: bartonbandis(x_l,phir_sd_low))
+                phir_sd_high = auto_phir + sd_phir
+                # jrc_sd_high = auto_jrc + sd_jrc
+                # jcs_sd_high = auto_jcs + sd_jcs
+                sd_high_curve = pd.DataFrame({'x_line':x_line})
+                sd_high_curve['y_line'] = sd_high_curve.apply(lambda x_l: bartonbandis(x_l,phir_sd_high))
+
+                # Clean it up for table
+                auto_phir = round(auto_phir,2)
+                auto_jrc = round(inp_jrc,2)
+                auto_jcs = round(inp_jcs,2)
+                r_sq_dst = round(r_sq_dst,4)
+                sd_phir = round(sd_phir,2)
+                sd_jrc = np.nan
+                sd_jcs = np.nan
+                val_1 = 'Phir'
+                val_2 = 'JRC'
+                val_3 = 'JCS'
+
+                # Manual Fit
+                col1, col2 = st.columns(2)
+                with col1:
+                    manual_on_p = st.radio("Manual Fit?",
+                        ('off', 'on'), horizontal=True)
+                if manual_on_p == 'on':
+                    # col1, col2 = st.columns(2)
+                    with col2:
+                        d_phir = st.number_input('Manual phir', value=auto_phir)
+                    # with col3:
+                    #     d_jrc = st.number_input('Manual jrc', value=inp_jrc)
+                    # with col4:
+                    #     d_jcs = st.number_input('Manual jcs', value=inp_jcs)
+
+                    # signmin = 10**(log10(inp_jcs)-((70-d_phir)/inp_jrc))
+                    # if signmin < 1: signmin = 1
+                    sigN = list(range(1, int(max(x)), 1))
+                    dman = pd.DataFrame({'sigN':sigN})
+                    dman['sigT'] = dman.apply(lambda row: bartonbandis(row['sigN'], d_phir), axis=1)
+                    params_man = [d_phir]
+                    residuals = y - bartonbandis(x,*params_man)
+                    ss_res = np.sum(residuals**2)
+                    ss_tot = np.sum((y-np.mean(y))**2)
+                    r_sq_dst_m = 1 - (ss_res/ss_tot)
+                    manual_val_1 = d_phir
+                    manual_val_2 = inp_jrc
+                    manual_val_3 = inp_jcs
+                    manual_val_4 = r_sq_dst_m
+                else:
+                    manual_val_1 = np.nan
+
+            # Power Fit
+            elif fitmethod == fit_selection[2]:
 
                 # Auto Fit
                 params, params_covariance = curve_fit(powercurve, x, y)
@@ -209,8 +282,7 @@ if df is not None:
                 sd_c, sd_f = sqrt(diag(params_covariance))
                 c_sd_low = auto_c
                 f_sd_low = auto_f - sd_f
-                # print(auto_c, sd_c, auto_f, sd_f)
-                # print(c_sd_low, f_sd_low)
+
                 sd_low_curve = pd.DataFrame({'x_line':x_line})
                 sd_low_curve['y_line'] = sd_low_curve.apply(lambda x_l:powercurve(x_l,c_sd_low,f_sd_low))
                 c_sd_high = auto_c
@@ -219,6 +291,7 @@ if df is not None:
                 sd_high_curve['y_line'] = sd_high_curve.apply(lambda x_l:powercurve(x_l,c_sd_high,f_sd_high))
 
                 # Clean up
+                # print(auto_c, auto_f)
                 auto_c = round(auto_c,4)
                 auto_f = round(auto_f,4)
                 r_sq_dst = round(r_sq_dst,4)
@@ -253,55 +326,6 @@ if df is not None:
                 else:
                     manual_val_1 = np.nan
 
-            # from bokeh.plotting import figure
-            # from bokeh.models import ColumnDataSource, CustomJS
-
-            # # import function
-            # from streamlit_bokeh_events import streamlit_bokeh_events
-
-            # # create plot
-            # p = figure(tools="lasso_select")
-            # colormap = {
-            #     'Remold': 'orange',
-            #     'Joint': 'blue'}
-            # df['colors'] = df['Shear Plane Type'].map(colormap)
-            # xx = df['NormalStress'].tolist()
-            # yy = df['ShearStress'].tolist()
-            # # colors = df['colors'].tolist()
-            # cds = ColumnDataSource(
-            #     data={
-            #         "x": xx,
-            #         "y": yy,
-            #     }
-            # )
-            # p.circle("x", "y", source=cds)
-            # # p.scatter('NormalStress', 'ShearStress', source=df, color='colors')
-
-            # # # define events
-            # cds.selected.js_on_change(
-            #     "indices",
-            #     CustomJS(
-            #         args=dict(source=cds),
-            #         code="""
-            #         document.dispatchEvent(
-            #             new CustomEvent("YOUR_EVENT_NAME", {detail: {your_data: "goes-here"}})
-            #         )
-            #         """
-            #     )
-            # )
-            # result = streamlit_bokeh_events(
-            #     bokeh_plot=p,
-            #     events="YOUR_EVENT_NAME",
-            #     key="foo",
-            #     refresh_on_update=False,
-            #     override_height=600,
-            #     debounce_time=500)
-
-            # # use the result
-            # st.write(result)
-
-            # st.bokeh_chart(p, use_container_width=True)
-
             figd = px.scatter(
                 df1, x="NormalStress", y="ShearStress",
                 color=colormethod_d, color_discrete_sequence=colors)
@@ -330,7 +354,7 @@ if df is not None:
                 title_text=f"No. of Data: {num_dst}",
                 plot_bgcolor='#FFFFFF',
                 paper_bgcolor='#FFFFFF',
-                height=550,)
+                height=600,)
 
             figd.update_xaxes(title_text='Normal Stress', gridcolor='lightgrey',
                 zeroline=True, zerolinewidth=3, zerolinecolor='lightgrey',
@@ -344,17 +368,65 @@ if df is not None:
                 line=dict(color="black", width=2))
 
             # Table
-            dst_summary = pd.DataFrame(columns=[" ", val_1, val_2, "R squared"])
-            to_append = ["Auto Fit - Mean", int(auto_c), int(auto_f), r_sq_dst]
-            new_row = len(dst_summary)
-            dst_summary.loc[new_row] = to_append
-            to_append = ["Auto Fit - STD", sd_c, sd_f, np.nan]
-            new_row = len(dst_summary)
-            dst_summary.loc[new_row] = to_append
-            if not np.isnan(manual_val_1):
-                to_append = ['Manual Fit', manual_val_1, manual_val_2, manual_val_3]
+            if fitmethod != fit_selection[1]:
+                dst_summary = pd.DataFrame(columns=[" ", val_1, val_2, "R squared"])
+                to_append = ["Auto Fit - Mean", auto_c, auto_f, r_sq_dst]
                 new_row = len(dst_summary)
                 dst_summary.loc[new_row] = to_append
+                to_append = ["Auto Fit - STD", sd_c, sd_f, np.nan]
+                new_row = len(dst_summary)
+                dst_summary.loc[new_row] = to_append
+                if not np.isnan(manual_val_1):
+                    to_append = ['Manual Fit', manual_val_1, manual_val_2, manual_val_3]
+                    new_row = len(dst_summary)
+                    dst_summary.loc[new_row] = to_append
+            else:
+                dst_summary = pd.DataFrame(columns=[" ", val_1, val_2, val_3, "R squared"])
+                to_append = ["Auto Fit - Mean", int(auto_phir), int(auto_jrc), int(auto_jcs), r_sq_dst]
+                new_row = len(dst_summary)
+                dst_summary.loc[new_row] = to_append
+                to_append = ["Auto Fit - STD", sd_phir, sd_jrc, sd_jcs, np.nan]
+                new_row = len(dst_summary)
+                dst_summary.loc[new_row] = to_append
+                if not np.isnan(manual_val_1):
+                    to_append = ['Manual Fit', manual_val_1, manual_val_2, manual_val_3, manual_val_4]
+                    new_row = len(dst_summary)
+                    dst_summary.loc[new_row] = to_append
+
+            # Bokeh graph
+            uniq = df1[colormethod_d].unique()
+            color_map = bmo.CategoricalColorMapper(factors=uniq, palette=colors)
+            source = ColumnDataSource(df1)
+            hover = HoverTool(tooltips=[
+                ('Hole ID', '@HoleID'),
+                ("Normal Stress", "@NormalStress"),
+                ("Shear Stress", "@ShearStress"),
+                ])
+            p=figure(tools=[hover], x_axis_label='Normal Stress', y_axis_label='Shear Stress')
+
+            p.scatter(x='NormalStress', y='ShearStress', size=9,
+                color={'field': colormethod_d, 'transform': color_map},
+                legend_group=colormethod_d, source=source)
+
+            source = ColumnDataSource(fit_curve)
+            p.line(x='x_line', y='y_line', line_width=2, line_color='grey',
+                legend_label=f'Curve Fit - {fitmethod}', source=source)
+
+            source = ColumnDataSource(sd_low_curve)
+            p.line(x='x_line', y='y_line', line_width=2, line_color=colors[7],
+                legend_label=f'-1 STD', source=source)
+
+            source = ColumnDataSource(sd_high_curve)
+            p.line(x='x_line', y='y_line', line_width=2, line_color=colors[7],
+                legend_label=f'+1 STD', source=source)
+
+            if manual_on_p == 'on':
+                source = ColumnDataSource(dman)
+                p.line(x='sigN', y='sigT', line_width=2, line_color='green',
+                    legend_label='Manual Fit', source=source)
+
+
+            p.legend.location = "top_left"
 
         else:
             figd = go.Figure().add_annotation(
@@ -364,10 +436,12 @@ if df is not None:
                 showarrow=False,yshift=10)
             dst_summary = pd.DataFrame()
 
+        if fig_method==fig_selection[0]:
+            st.plotly_chart(figd, use_container_width=True)
+        else:
+            st.bokeh_chart(p, use_container_width=True)
 
-        st.plotly_chart(figd, use_container_width=True)
-
-        st.markdown("**Cohesion and Friction Angle**")
+        st.markdown("**Shear Strength**")
         st.table(dst_summary)
 
         st.subheader("Dataset")
@@ -414,7 +488,8 @@ if df is not None:
         # For Figure
         t_fri = arcsin((b-1)/(b+1))
         t_coh = a * (1-sin(t_fri))/(2*cos(t_fri))
-        Sigma3 = list(range(0, int(x.max()+0.15*x.max())))
+        min_val = int((max(du['Sigma3'])-min(du['Sigma3']))/40)
+        Sigma3 = list(range(min_val, int(x.max()+0.15*x.max())))
         c_line = pd.DataFrame({'Sigma3':Sigma3})
         c_line['Sigma1'] = c_line.apply(lambda row: a+b*row['Sigma3'], axis=1)
 
@@ -430,26 +505,34 @@ if df is not None:
         c_line['Low_Std_Sigma1'] = c_line.apply(lambda row: (a-sd_a)+(b-sd_b)*row['Sigma3'], axis=1)
         c_line['High_Std_Sigma1'] = c_line.apply(lambda row: (a+sd_a)+(b+sd_b)*row['Sigma3'], axis=1)
 
-        # low_a = a - sd_a
-        # low_b = b - sd_b
-        # low_line = pd.DataFrame({'Sigma3':Sigma3})
-        # low_line['Sigma1'] = low_line.apply(lambda row: low_a+low_b*row['Sigma3'], axis=1)
-
-        # high_a = a + sd_a
-        # high_b = b + sd_b
-        # high_line = pd.DataFrame({'Sigma3':Sigma3})
-        # high_line['Sigma1'] = high_line.apply(lambda row: high_a+high_b*row['Sigma3'], axis=1)
-
         return t_coh, degrees(t_fri), r_sq_l, c_line
 
-    with tab2:
+    # with tab2:
+    if selected == options[1]:
         method_selection = ('Hoek Calculation', 'Scipy Curve Fit')
         calc_selection = ('All data', 'HTX + UCS(mean)', 'HTX only')
 
-        # st.header("UCS and Rock TXL")
         du = df[df['TestType'].isin(['Uniax', 'Triax', 'Brazilian'])]
         du = du[du['Sigma3'].notna()]
         du = du[du['PeakSigma1'].notna()]
+
+        if len(du['Sigma3'])>0:
+            rock_type = set(du['Rock Type'])
+            rock_selection = st.sidebar.multiselect("Rock Type", (rock_type))
+            if rock_selection: du = du[du['Rock Type'].isin(rock_selection)]
+
+            holeid = set(du['HoleID'])
+            holeid_selection = st.sidebar.multiselect("Hole ID", (holeid))
+            if holeid_selection: du = du[du['HoleID'].isin(holeid_selection)]
+
+            sampletype = set(du['SampleType'])
+            testtype_selection = st.sidebar.multiselect("Test type", (sampletype))
+            if testtype_selection: du = du[du['SampleType'].isin(testtype_selection)]
+
+            failure_mode = set(du['Failure Mode'])
+            failuremode_selection = st.sidebar.multiselect("Failure Mode", (failure_mode))
+            if failuremode_selection: du = du[du['Failure Mode'].isin(failuremode_selection)]
+
 
         # Auto Fit - Method and dataset
         col4, col5, col6 = st.columns(3)
@@ -466,12 +549,6 @@ if df is not None:
                 horizontal=True)
 
         if len(du['Sigma3']) > 0:
-
-            # figu = go.Figure()
-            figu = px.scatter(
-                    du, x="Sigma3", y="PeakSigma1",
-                    color=colormethod_u, color_discrete_sequence=colors)
-            figu.update_traces(marker=dict(size=9))
 
             # Calculate mean UCS and BZT test results
             if not du[du['Sigma3']==0].empty:
@@ -531,9 +608,9 @@ if df is not None:
                 c_tens, c_curv, c_vert, r_sq_c = get_curve_df(auto_sigci, auto_mi, sig3, sig1)
 
                 # Linear
-                params, params_covariance = curve_fit(lin_reg, sig3, sig1)
-                a, b = params
-                t_coh, t_fri, r_sq_l, c_line = get_linear_df(a, b, params_covariance, sig3, sig1)
+                # params, params_covariance = curve_fit(lin_reg, sig3, sig1)
+                # a, b = params
+                # t_coh, t_fri, r_sq_l, c_line = get_linear_df(a, b, params_covariance, sig3, sig1)
 
             else:
                 params, params_covariance = curve_fit(objective, sig3, sig1)
@@ -543,13 +620,17 @@ if df is not None:
 
                 c_tens, c_curv, c_vert, r_sq_c = get_curve_df(auto_sigci, auto_mi, sig3, sig1)
 
-                # Linear
-                params, params_covariance = curve_fit(lin_reg, sig3, sig1)
-                a, b = params
-                t_coh, t_fri, r_sq_l, c_line = get_linear_df(a, b, params_covariance, sig3, sig1)
+            # Linear
+            params, params_covariance = curve_fit(lin_reg, sig3, sig1)
+            a, b = params
+            t_coh, t_fri, r_sq_l, c_line = get_linear_df(a, b, params_covariance, sig3, sig1)
 
             # Calculated Figure
-            # if calc_data==calc_selection[0]:
+            figu = px.scatter(
+                du, x="Sigma3", y="PeakSigma1",
+                color=colormethod_u, color_discrete_sequence=colors)
+            figu.update_traces(marker=dict(size=9))
+
             figu.add_trace(
                 go.Scatter(x=c_line['Sigma3'], y=c_line['Sigma1'],
                     mode='lines', name=f'Linear Regression',
@@ -655,18 +736,73 @@ if df is not None:
                     title_text=f"No. of Data: {num_ucs}",
                     plot_bgcolor='#FFFFFF',
                     paper_bgcolor='#FFFFFF',
-                    height=550)
+                    height=600,)
 
             figu.update_xaxes(title_text='Sigma 3', gridcolor='lightgrey',
                 zeroline=True, zerolinewidth=3, zerolinecolor='lightgrey',
-                tickformat=",.0f")
+                tickformat=",.0f", ticks="outside", ticklen=5)
             figu.update_yaxes(title_text='Peak Sigma 1', gridcolor='lightgrey',
                 zeroline=True, zerolinewidth=3, zerolinecolor='lightgrey',
-                tickformat=",.0f")
+                tickformat=",.0f", ticks="outside", ticklen=5)
             figu.add_shape(
                 type="rect", xref="paper", yref="paper",
                 x0=0, y0=0, x1=1.0, y1=1.0,
                 line=dict(color="black", width=2))
+
+            # Bokeh graph
+            uniq = du[colormethod_u].unique()
+            sel_colors = colors[:len(uniq)]
+            dict_col = {typ:cl for typ,cl in zip(uniq, sel_colors)}
+            du['color'] = du[colormethod_u].map(dict_col)
+
+            color_map = bmo.CategoricalColorMapper(factors=du[colormethod_u].unique(), palette=colors)
+            source = ColumnDataSource(du)
+            hover = HoverTool(tooltips=[
+                ('HoleID', '@HoleID'),
+                ("Sigma3", "@Sigma3"),
+                ("PeakSigma1", "@PeakSigma1"),
+                ])
+            p=figure(tools=[hover], x_axis_label='Sigma 3', y_axis_label='Peak Sigma 1')
+
+            if len(ducs) > 0:
+                q1 = ducs['PeakSigma1'].quantile(q=0.25)
+                q2 = ducs['PeakSigma1'].quantile(q=0.5)
+                q3 = ducs['PeakSigma1'].quantile(q=0.75)
+                width = int((max(du['Sigma3'])-min(du['Sigma3']))/20)
+
+                p.vbar([0], width, q2, q3, fill_color='indianred', line_color="black", legend_label="boxplot",)
+                p.vbar([0], width, q1, q2, fill_color='indianred', line_color="black")
+
+            p.scatter(x='Sigma3', y='PeakSigma1', size=9,
+                color={'field': colormethod_u, 'transform': color_map},
+                legend_group=colormethod_u, source=source)
+
+            source = ColumnDataSource(c_line)
+            p.line(x='Sigma3', y='Sigma1', line_width=2, line_color='lightgrey',
+                legend_label='Linear Regression', source=source)
+
+            source = ColumnDataSource(c_curv)
+            p.line(x='Sigma3', y='Sigma1', line_width=2, line_color='black',
+                legend_label='Auto Fit', source=source)
+
+            source = ColumnDataSource(c_vert)
+            p.line(x='Sigma3', y='Sigma1', line_width=2, line_color='black', source=source)
+
+            if manual_on == 'On':
+                source = ColumnDataSource(m_curv)
+                p.line(x='Sigma3', y='Sigma1', line_width=2, line_color='green',
+                    legend_label='Manual Fit', source=source)
+
+                source = ColumnDataSource(m_vert)
+                p.line(x='Sigma3', y='Sigma1', line_width=2, line_color='green', source=source)
+
+            source = ColumnDataSource(c_line)
+            band = Band(base='Sigma3', lower='Low_Std_Sigma1', upper='High_Std_Sigma1', source=source,
+                level='underlay', fill_alpha=0.5, line_width=1, line_color='black')
+            p.add_layout(band)
+
+            # p.circle(xx, yy, fill_color="blue", size=9, legend_label="data",)
+            p.legend.location = "top_left"
 
         else:
             figu = go.Figure().add_annotation(
@@ -676,7 +812,11 @@ if df is not None:
                 showarrow=False,yshift=10)
             ucs_summary = pd.DataFrame()
 
-        st.plotly_chart(figu, use_container_width=True)
+
+        if fig_method==fig_selection[0]:
+            st.plotly_chart(figu, use_container_width=True)
+        else:
+            st.bokeh_chart(p, use_container_width=True)
 
         # st.subheader("Summary")
         st.markdown("**Sigci and mi**")
