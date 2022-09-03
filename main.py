@@ -361,7 +361,7 @@ if df is not None:
                 tickformat=",.0f")
             figd.update_yaxes(title_text='Shear Stress', gridcolor='lightgrey',
                 zeroline=True, zerolinewidth=3, zerolinecolor='lightgrey',
-                tickformat=",.0f")
+                tickformat=",.0f", range=[0,max(y)*1.05])
             figd.add_shape(
                 type="rect", xref="paper", yref="paper",
                 x0=0, y0=0, x1=1.0, y1=1.0,
@@ -442,10 +442,10 @@ if df is not None:
             st.bokeh_chart(p, use_container_width=True)
 
         st.markdown("**Shear Strength**")
-        st.table(dst_summary)
+        st.dataframe(dst_summary)
 
         st.subheader("Dataset")
-        st.table(df1[['HoleID', 'Rock Type', 'TestStage', 'NormalStress', 'ShearStress', 'Peak or Residual', 'Shear Plane Type']])
+        st.dataframe(df1[['HoleID', 'Rock Type', 'TestStage', 'NormalStress', 'ShearStress', 'Peak or Residual', 'Shear Plane Type']])
 
     # ------------ UCS and Rock TXL -------------------
     def objective(x, a, b):
@@ -650,12 +650,12 @@ if df is not None:
             figu.add_trace(
                 go.Scatter(x=c_curv['Sigma3'], y=c_curv['Sigma1'],
                     mode='lines', name=f'Auto Fit',
-                    line=dict(color=colors[2])))
+                    line=dict(color='black')))
 
             figu.add_trace(
                 go.Scatter(x=c_vert['Sigma3'], y=c_vert['Sigma1'],
                     mode='lines', name='Calc ALL Vertical', showlegend = False,
-                    line=dict(color=colors[2])))
+                    line=dict(color='black')))
 
             # Table - Auto Fit
             ucs_summary = pd.DataFrame(columns=["Method", "Sigci", "mi", "Tensile Cutoff", "R squared"])
@@ -743,7 +743,8 @@ if df is not None:
                 tickformat=",.0f", ticks="outside", ticklen=5)
             figu.update_yaxes(title_text='Peak Sigma 1', gridcolor='lightgrey',
                 zeroline=True, zerolinewidth=3, zerolinecolor='lightgrey',
-                tickformat=",.0f", ticks="outside", ticklen=5)
+                tickformat=",.0f", ticks="outside", ticklen=5,
+                range=[0,max(du['PeakSigma1'])*1.05])
             figu.add_shape(
                 type="rect", xref="paper", yref="paper",
                 x0=0, y0=0, x1=1.0, y1=1.0,
