@@ -21,6 +21,8 @@ base_colors = {
     'text': '#F9F9F3'
 }
 
+colors = px.colors.qualitative.T10
+
 st.set_page_config(layout="wide")
 
 hide_table_row_index = """
@@ -31,8 +33,6 @@ hide_table_row_index = """
     header {visibility: hidden;}
     </style>
     """
-
-colors = px.colors.qualitative.T10
 
 st.markdown(hide_table_row_index, unsafe_allow_html=True)
 
@@ -81,6 +81,33 @@ if df is not None:
 
         # Additional Filter
         if len(df1)>0:
+            color_list = ['Shear Plane Type', 'Rock Type', 'HoleID', 'TestStage']
+            p_max_o = int(df1['NormalStress'].max())
+            p_max = st.sidebar.number_input('Maximum Normal Stress', value=p_max_o)
+            df1 = df1[df1['NormalStress']<=p_max]
+
+            if "Project" in df1.columns:
+                project = set(df1['Project'])
+                project_selection = st.sidebar.multiselect("Project", (project))
+                if project_selection: df1 = df1[df1['Project'].isin(project_selection)]
+
+            if "Prospect" in df1.columns:
+                prospect = set(df1['Prospect'])
+                prospect_selection = st.sidebar.multiselect("Prospect", (prospect))
+                if prospect_selection: df1 = df1[df1['Prospect'].isin(prospect_selection)]
+                color_list.append("Prospect")
+
+            if "Formation" in df1.columns:
+                formation = set(df1['Formation'])
+                formation_selection = st.sidebar.multiselect("Formation", (formation))
+                if formation_selection: df1 = df1[df1['Formation'].isin(formation_selection)]
+
+            if "SubFormation" in df1.columns:
+                subformation = set(df1['SubFormation'])
+                subformation_selection = st.sidebar.multiselect("SubFormation", (subformation))
+                if subformation_selection: df1 = df1[df1['SubFormation'].isin(subformation_selection)]
+
+
             rock_type = set(df1['Rock Type'])
             rock_selection = st.sidebar.multiselect("Rock Type", (rock_type))
             if rock_selection: df1 = df1[df1['Rock Type'].isin(rock_selection)]
@@ -93,7 +120,7 @@ if df is not None:
             testtype_selection = st.sidebar.multiselect("Test type", (sampletype))
             if testtype_selection: df1 = df1[df1['SampleType'].isin(testtype_selection)]
 
-            teststage = (x for x in set(df1['TestStage']) if np.isnan(x) == False)
+            teststage = (str(x) for x in set(df1['TestStage']) if np.isnan(x) == False)
             teststage_selection = st.sidebar.multiselect("Test Stage", (teststage))
 
             shear_type = set(df1['Shear Plane Type'])
@@ -102,8 +129,15 @@ if df is not None:
             if teststage_selection: df1 = df1[df1['TestStage'].isin(teststage_selection)]
             if sheartype_selection: df1 = df1[df1['Shear Plane Type'].isin(sheartype_selection)]
 
+            if "Test Year" in df1.columns:
+                testyear = set(df1['Test Year'])
+                testyear_selection = st.sidebar.multiselect("Test Year", (testyear))
+                if testyear_selection: df1 = df1[df1['Test Year'].isin(testyear_selection)]
+
         x = df1["NormalStress"]
         y = df1["ShearStress"]
+
+        # color_list = set(color_list)
 
         col4, col5 = st.columns(2)
 
@@ -113,8 +147,7 @@ if df is not None:
                 fit_selection, horizontal=True)
         with col5:
             colormethod_d = st.radio("Color By",
-                ('Shear Plane Type', 'Rock Type', 'HoleID', 'TestStage'),
-                horizontal=True)
+                color_list, horizontal=True)
 
         if len(x) > 0:
             if fitmethod == fit_selection[0]:
@@ -135,6 +168,7 @@ if df is not None:
 
                 # One standard deviation
                 sd_c, sd_f = sqrt(diag(params_covariance))
+                # print(auto_f, sd_f, degrees(auto_f), degrees(sd_f))
                 c_sd_low = auto_c - sd_c
                 f_sd_low = auto_f - sd_f
                 sd_low_curve = pd.DataFrame({'x_line':x_line})
@@ -445,8 +479,8 @@ if df is not None:
         st.dataframe(dst_summary)
 
         st.subheader("Dataset")
-        st.dataframe(df1[['HoleID', 'Rock Type', 'TestStage', 'NormalStress', 'ShearStress', 'Peak or Residual', 'Shear Plane Type']])
-
+        # st.dataframe(df1[['HoleID', 'Rock Type', 'TestStage', 'NormalStress', 'ShearStress', 'Shear Plane Type']])
+        st.dataframe(df1[1:])
     # ------------ UCS and Rock TXL -------------------
     def objective(x, a, b):
         # row['Sigma_3'] + sigci*math.sqrt((mi * row['Sigma_3'] / sigci) + 1)
