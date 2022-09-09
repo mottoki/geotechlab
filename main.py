@@ -13,6 +13,8 @@ from bokeh.plotting import figure
 from bokeh.models import ColumnDataSource, HoverTool, LinearColorMapper, Band
 import bokeh.models as bmo
 
+from st_aggrid import AgGrid
+
 # ------------------ INPUT --------------------------------
 base_colors = {
     'background': '#616161',
@@ -27,14 +29,13 @@ st.set_page_config(layout="wide")
 
 hide_table_row_index = """
     <style>
-    thead tr th:first-child {display:none}
-    tbody th {display:none}
     footer {visibility: hidden;}
     header {visibility: hidden;}
     </style>
     """
 
 st.markdown(hide_table_row_index, unsafe_allow_html=True)
+
 
 pd.set_option('display.max_columns', None)
 pd.set_option('display.max_rows', None)
@@ -78,6 +79,7 @@ if df is not None:
         # st.header("DST")
 
         df1 = df[df['SampleType']=='DST']
+        df1['TestStage'] = pd.to_numeric(df1['TestStage'], downcast='integer', errors='coerce')
 
         # Additional Filter
         if len(df1)>0:
@@ -107,7 +109,6 @@ if df is not None:
                 subformation_selection = st.sidebar.multiselect("SubFormation", (subformation))
                 if subformation_selection: df1 = df1[df1['SubFormation'].isin(subformation_selection)]
 
-
             rock_type = set(df1['Rock Type'])
             rock_selection = st.sidebar.multiselect("Rock Type", (rock_type))
             if rock_selection: df1 = df1[df1['Rock Type'].isin(rock_selection)]
@@ -120,7 +121,7 @@ if df is not None:
             testtype_selection = st.sidebar.multiselect("Test type", (sampletype))
             if testtype_selection: df1 = df1[df1['SampleType'].isin(testtype_selection)]
 
-            teststage = (str(x) for x in set(df1['TestStage']) if np.isnan(x) == False)
+            teststage = (x for x in set(df1['TestStage']) if np.isnan(x) == False)
             teststage_selection = st.sidebar.multiselect("Test Stage", (teststage))
 
             shear_type = set(df1['Shear Plane Type'])
@@ -360,46 +361,81 @@ if df is not None:
                 else:
                     manual_val_1 = np.nan
 
-            figd = px.scatter(
-                df1, x="NormalStress", y="ShearStress",
-                color=colormethod_d, color_discrete_sequence=colors)
+            if fig_method == fig_selection[0]:
+                figd = px.scatter(
+                    df1, x="NormalStress", y="ShearStress",
+                    color=colormethod_d, color_discrete_sequence=colors)
 
-            figd.update_traces(marker=dict(size=9))
+                figd.update_traces(marker=dict(size=9))
 
-            if not np.isnan(manual_val_1):
-                figd.add_trace(go.Scatter(x=dman["sigN"], y=dman["sigT"],
-                    mode='lines', name='Manual Fit',
-                    line=dict(dash='dash', color=colors[8])))
+                if not np.isnan(manual_val_1):
+                    figd.add_trace(go.Scatter(x=dman["sigN"], y=dman["sigT"],
+                        mode='lines', name='Manual Fit',
+                        line=dict(dash='dash', color=colors[8])))
 
-            figd.add_trace(go.Scatter(x=fit_curve['x_line'], y=fit_curve['y_line'],
-                mode='lines', name=f'Curve Fit - {fitmethod}',
-                line=dict(color='grey')))
+                figd.add_trace(go.Scatter(x=fit_curve['x_line'], y=fit_curve['y_line'],
+                    mode='lines', name=f'Curve Fit - {fitmethod}',
+                    line=dict(color='grey')))
 
-            figd.add_trace(go.Scatter(x=sd_low_curve['x_line'], y=sd_low_curve['y_line'],
-                mode='lines', name=f'-1 STD',
-                line=dict(dash='dash', color=colors[7])))
+                figd.add_trace(go.Scatter(x=sd_low_curve['x_line'], y=sd_low_curve['y_line'],
+                    mode='lines', name=f'-1 STD',
+                    line=dict(dash='dash', color=colors[7])))
 
-            figd.add_trace(go.Scatter(x=sd_high_curve['x_line'], y=sd_high_curve['y_line'],
-                mode='lines', name=f'+1 STD',
-                line=dict(dash='dash', color=colors[7])))
+                figd.add_trace(go.Scatter(x=sd_high_curve['x_line'], y=sd_high_curve['y_line'],
+                    mode='lines', name=f'+1 STD',
+                    line=dict(dash='dash', color=colors[7])))
 
-            num_dst = len(df1.index)
-            figd.update_layout(
-                title_text=f"No. of Data: {num_dst}",
-                plot_bgcolor='#FFFFFF',
-                paper_bgcolor='#FFFFFF',
-                height=600,)
+                num_dst = len(df1.index)
+                figd.update_layout(
+                    title_text=f"No. of Data: {num_dst}",
+                    plot_bgcolor='#FFFFFF',
+                    paper_bgcolor='#FFFFFF',
+                    height=600,)
 
-            figd.update_xaxes(title_text='Normal Stress', gridcolor='lightgrey',
-                zeroline=True, zerolinewidth=3, zerolinecolor='lightgrey',
-                tickformat=",.0f")
-            figd.update_yaxes(title_text='Shear Stress', gridcolor='lightgrey',
-                zeroline=True, zerolinewidth=3, zerolinecolor='lightgrey',
-                tickformat=",.0f", range=[0,max(y)*1.05])
-            figd.add_shape(
-                type="rect", xref="paper", yref="paper",
-                x0=0, y0=0, x1=1.0, y1=1.0,
-                line=dict(color="black", width=2))
+                figd.update_xaxes(title_text='Normal Stress', gridcolor='lightgrey',
+                    zeroline=True, zerolinewidth=3, zerolinecolor='lightgrey',
+                    tickformat=",.0f")
+                figd.update_yaxes(title_text='Shear Stress', gridcolor='lightgrey',
+                    zeroline=True, zerolinewidth=3, zerolinecolor='lightgrey',
+                    tickformat=",.0f", range=[0,max(y)*1.05])
+                figd.add_shape(
+                    type="rect", xref="paper", yref="paper",
+                    x0=0, y0=0, x1=1.0, y1=1.0,
+                    line=dict(color="black", width=2))
+            else:
+                # Bokeh graph
+                uniq = df1[colormethod_d].unique()
+                color_map = bmo.CategoricalColorMapper(factors=uniq, palette=colors)
+                source = ColumnDataSource(df1)
+                hover = HoverTool(tooltips=[
+                    ('Hole ID', '@HoleID'),
+                    ("Normal Stress", "@NormalStress"),
+                    ("Shear Stress", "@ShearStress"),
+                    ])
+                p=figure(tools=[hover], x_axis_label='Normal Stress', y_axis_label='Shear Stress')
+
+                p.scatter(x='NormalStress', y='ShearStress', size=9,
+                    color={'field': colormethod_d, 'transform': color_map},
+                    legend_group=colormethod_d, source=source)
+
+                source = ColumnDataSource(fit_curve)
+                p.line(x='x_line', y='y_line', line_width=2, line_color='grey',
+                    legend_label=f'Curve Fit - {fitmethod}', source=source)
+
+                source = ColumnDataSource(sd_low_curve)
+                p.line(x='x_line', y='y_line', line_width=2, line_color=colors[7],
+                    legend_label=f'-1 STD', source=source)
+
+                source = ColumnDataSource(sd_high_curve)
+                p.line(x='x_line', y='y_line', line_width=2, line_color=colors[7],
+                    legend_label=f'+1 STD', source=source)
+
+                if manual_on_p == 'on':
+                    source = ColumnDataSource(dman)
+                    p.line(x='sigN', y='sigT', line_width=2, line_color='green',
+                        legend_label='Manual Fit', source=source)
+
+                p.legend.location = "top_left"
 
             # Table
             if fitmethod != fit_selection[1]:
@@ -427,41 +463,6 @@ if df is not None:
                     new_row = len(dst_summary)
                     dst_summary.loc[new_row] = to_append
 
-            # Bokeh graph
-            uniq = df1[colormethod_d].unique()
-            color_map = bmo.CategoricalColorMapper(factors=uniq, palette=colors)
-            source = ColumnDataSource(df1)
-            hover = HoverTool(tooltips=[
-                ('Hole ID', '@HoleID'),
-                ("Normal Stress", "@NormalStress"),
-                ("Shear Stress", "@ShearStress"),
-                ])
-            p=figure(tools=[hover], x_axis_label='Normal Stress', y_axis_label='Shear Stress')
-
-            p.scatter(x='NormalStress', y='ShearStress', size=9,
-                color={'field': colormethod_d, 'transform': color_map},
-                legend_group=colormethod_d, source=source)
-
-            source = ColumnDataSource(fit_curve)
-            p.line(x='x_line', y='y_line', line_width=2, line_color='grey',
-                legend_label=f'Curve Fit - {fitmethod}', source=source)
-
-            source = ColumnDataSource(sd_low_curve)
-            p.line(x='x_line', y='y_line', line_width=2, line_color=colors[7],
-                legend_label=f'-1 STD', source=source)
-
-            source = ColumnDataSource(sd_high_curve)
-            p.line(x='x_line', y='y_line', line_width=2, line_color=colors[7],
-                legend_label=f'+1 STD', source=source)
-
-            if manual_on_p == 'on':
-                source = ColumnDataSource(dman)
-                p.line(x='sigN', y='sigT', line_width=2, line_color='green',
-                    legend_label='Manual Fit', source=source)
-
-
-            p.legend.location = "top_left"
-
         else:
             figd = go.Figure().add_annotation(
                 x=2, y=2,text="No Data to Display",
@@ -476,11 +477,15 @@ if df is not None:
             st.bokeh_chart(p, use_container_width=True)
 
         st.markdown("**Shear Strength**")
-        st.dataframe(dst_summary)
+        st.dataframe(dst_summary.style.format(precision=2)) #style.set_precision(2))
+        # AgGrid(dst_summary, fit_columns_on_grid_load=True, height=110)
 
         st.subheader("Dataset")
         # st.dataframe(df1[['HoleID', 'Rock Type', 'TestStage', 'NormalStress', 'ShearStress', 'Shear Plane Type']])
-        st.dataframe(df1[1:])
+        # st.dataframe(df1[1:])
+        df1 = df1.iloc[:,1:]
+        df1 = df1.dropna(axis=1, how='all')
+        AgGrid(df1)
     # ------------ UCS and Rock TXL -------------------
     def objective(x, a, b):
         # row['Sigma_3'] + sigci*math.sqrt((mi * row['Sigma_3'] / sigci) + 1)
@@ -732,29 +737,6 @@ if df is not None:
                 new_row = len(ucs_summary)
                 ucs_summary.loc[new_row] = to_append
 
-            # figu.add_trace(
-            #     go.Scatter(x=ducs_mean['Sigma3'], y=ducs_mean['PeakSigma1'],
-            #         name='Mean UCS', mode='markers',
-            #         marker=dict(size=15, color=colors[-3])))
-
-            # figu.add_trace(
-            #     go.Scatter(x=dbzt_mean['Sigma3'], y=dbzt_mean['PeakSigma1'],
-            #         name='Mean Brazilian', mode='markers',
-            #         marker=dict(size=15, color=colors[-4])))
-
-
-            # else:
-            #     figu.add_trace(
-            #         go.Scatter(x=calc_curv_txl['Sigma3'], y=calc_curv_txl['Sigma1'],
-            #             mode='lines', name=f'Calculated - {calc_selection[1]}',
-            #             line=dict(color=colors[0])))
-
-            #     figu.add_trace(
-            #         go.Scatter(x=cal_vert_txl['Sigma3'], y=cal_vert_txl['Sigma1'],
-            #             mode='lines', name='Calc TXL Vertical', showlegend = False,
-            #             line=dict(color=colors[0])))
-
-
             # Boxplot
             ducs = du[du['Sigma3']==0]
             ducs = ducs[['Sigma3', 'PeakSigma1']]
@@ -861,7 +843,11 @@ if df is not None:
         st.table(linear_summary)
 
         st.subheader("Dataset")
-        st.table(du[['HoleID', 'Rock Type', 'Sigma3', 'PeakSigma1', 'Failure Mode']])
+        # st.table(du[['HoleID', 'Rock Type', 'Sigma3', 'PeakSigma1', 'Failure Mode']])
+
+        du = du.iloc[:,1:]
+        du = du.dropna(axis=1, how='all')
+        AgGrid(du)
 
 
 else:
