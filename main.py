@@ -4,7 +4,7 @@ import numpy as np
 import plotly.graph_objs as go
 import plotly.express as px
 from scipy.optimize import curve_fit
-import statsmodels.api as sm
+# import statsmodels.api as sm
 import statsmodels.formula.api as smf
 from scipy import stats
 
