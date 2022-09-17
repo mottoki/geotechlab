@@ -6,6 +6,7 @@ import plotly.express as px
 from scipy.optimize import curve_fit
 import statsmodels.api as sm
 import statsmodels.formula.api as smf
+from scipy import stats
 
 from numpy import sin, cos, tan, arcsin, arccos, arctan, radians, degrees, sqrt, diag, log10, log, exp
 
@@ -29,28 +30,18 @@ colors = px.colors.qualitative.T10
 
 st.set_page_config(layout="wide")
 
-hide_table_row_index = """
-    <style>
-    footer {visibility: hidden;}
-    header {visibility: hidden;}
-    </style>
-    """
+# hide_table_row_index = """
+#     <style>
+#     footer {visibility: hidden;}
+#     header {visibility: hidden;}
+#     </style>
+#     """
 
-st.markdown(hide_table_row_index, unsafe_allow_html=True)
+# st.markdown(hide_table_row_index, unsafe_allow_html=True)
 
 
 pd.set_option('display.max_columns', None)
 pd.set_option('display.max_rows', None)
-
-# ------------------ FUNCTION ----------------------------------
-# Direct Shear
-def weakfunc(x, a, b):
-    # shear stress = cohesion + normal stress * tan(friction_angle)
-    # x = Normal Stress, a = cohesion, b = friction angle
-    return a + x * np.tan(b)
-
-def powercurve(x, k, m):
-    return k * (x ** m)
 
 # -------------------- Sidebar -------------------------------------------
 uploaded_file = st.sidebar.file_uploader("Choose a file")
@@ -68,7 +59,7 @@ else:
 if df is not None:
     # -------------------- Tabs -----------------------------------------------
     # tab1, tab2 = st.tabs(["Defect Shear Strength", "Rockmass Shear Strength"])
-    options = ['Defect Shear Strength', 'Rockmass Shear Strength']
+    options = ['Defect Shear Strength', 'Rockmass Shear Strength', 'Soil Shear Strength']
     selected = option_menu(
         menu_title=None,
         options=options,
@@ -124,11 +115,10 @@ if df is not None:
 
             teststage = (x for x in set(df1['TestStage']) if np.isnan(x) == False)
             teststage_selection = st.sidebar.multiselect("Test Stage", (teststage))
+            if teststage_selection: df1 = df1[df1['TestStage'].isin(teststage_selection)]
 
             shear_type = set(df1['Shear Plane Type'])
             sheartype_selection = st.sidebar.multiselect("Shear Plane Type", (shear_type))
-
-            if teststage_selection: df1 = df1[df1['TestStage'].isin(teststage_selection)]
             if sheartype_selection: df1 = df1[df1['Shear Plane Type'].isin(sheartype_selection)]
 
             if "Test Year" in df1.columns:
@@ -157,17 +147,30 @@ if df is not None:
                     inp_jcs = st.number_input('Enter jcs', value=100)
 
             col1, col2 = st.columns(2)
+            # with col1:
+            #     lq_sd = st.number_input('Lower Phir Std Dev', value=1, step=1)
+            # with col2:
+            #     uq_sd = st.number_input('Upper Phir Std Dev', value=1, step=1)
+            ciselection = ('Scipy', 'Statsmodels')
             with col1:
-                lq_sd = st.number_input('Lower Phir Std Dev', value=1, step=1)
+                cimethod = st.radio("Model Method",
+                    ciselection, horizontal=True)
             with col2:
-                uq_sd = st.number_input('Upper Phir Std Dev', value=1, step=1)
+                ci = st.number_input('Confidence Interval (%)', value=95, step=5)
 
         else:
+            # col1, col2 = st.columns(2)
+            # with col1:
+            #     lq_value = st.number_input('Lower Quantile (%)', value=25, step=5)
+            # with col2:
+            #     uq_value = st.number_input('Upper Quantile (%)', value=75, step=5)
             col1, col2 = st.columns(2)
+            ciselection = ('Scipy', 'Statsmodels')
             with col1:
-                lq_value = st.number_input('Lower Quantile (%)', value=25, step=5)
+                cimethod = st.radio("Model Method",
+                    ciselection, horizontal=True)
             with col2:
-                uq_value = st.number_input('Upper Quantile (%)', value=75, step=5)
+                ci = st.number_input('Confidence Interval (%)', value=95, step=5)
 
         col1, col2 = st.columns(2)
 
@@ -192,6 +195,20 @@ if df is not None:
             else:
                 intercept_k = np.nan
 
+        # ------------------ FUNCTION ----------------------------------
+        # Direct Shear
+        def weakfunc(x, a, b):
+            # shear stress = cohesion + normal stress * tan(friction_angle)
+            # x = Normal Stress, a = cohesion, b = friction angle
+            # return a + x * tan(b)
+            return a + x * b
+
+        def powercurve(x, k, m):
+            return k * (x ** m)
+
+        def bartonbandis(x, phir):
+            return x * tan(radians(phir + inp_jrc * log10(inp_jcs / x)))
+
         def fit_model(data, q, a_intercept):
             if fitmethod != fit_selection[1]:
                 mod = smf.quantreg("ShearStress ~ NormalStress", data)
@@ -203,13 +220,17 @@ if df is not None:
                         return [q, a_intercept, res.params["NormalStress"]] + res.conf_int().loc["NormalStress"].tolist()
                 return [q, res.params["Intercept"], res.params["NormalStress"]] + res.conf_int().loc["NormalStress"].tolist()
             # else:
-            #     mod = smf.quantreg("ShearStress ~ NormalStress + I(tan(radians(inp_jrc + log10(inp_jcs/NormalStress))))", data)
+            #     mod = smf.quantreg("ShearStress ~ NormalStress + tan(radians(inp_jrc + log10(inp_jcs/I(NormalStress)))))", data)
             #     res = mod.fit(q=q)
             #     return [q, a_intercept, res.params["NormalStress"]] + res.conf_int().loc["NormalStress"].tolist()
 
         def quantile_models(data, a_intercept):
             data.columns = ["NormalStress", "ShearStress"]
-            quantiles = np.arange(lq_value/100, uq_value/100 + 0.05, (uq_value-lq_value)/100)
+            # quantiles = np.arange(lq_value/100, uq_value/100 + 0.05, (uq_value-lq_value)/100)
+            lq = (50 - ci/2)/100
+            uq = (50 + ci/2)/100
+            print(lq, uq, ci)
+            quantiles = np.arange(lq, uq+0.05, uq - lq)
 
             models = [fit_model(data, x, a_intercept) for x in quantiles]
             models = pd.DataFrame(models, columns=["q", "a", "b", "lb", "ub"])
@@ -229,18 +250,18 @@ if df is not None:
 
             if fitmethod != fit_selection[1]:
                 get_y = lambda a, b: a + xx * b  # a = cohesion, b = np.tan(phi)
-            else:
-                get_y = lambda a, b: a + xx * tan(radians(b + inp_jrc * log10(inp_jcs/xx))) # a = 0, b = phir
+            # else:
+            #     get_y = lambda a, b: a + xx * tan(radians(b + inp_jrc * log10(inp_jcs/xx))) # a = 0, b = phir
 
             for i in range(models.shape[0]):
                 yy = get_y(models.a[i], models.b[i])
-                if models.q[i] == lq_value/100:
+                if models.q[i] == lq:
                     dlq = pd.DataFrame({'x': xx, 'y': yy})
                     # lq_pct = int(models.q[i]*100)
                     lq_a = models.a[i]
                     lq_b = models.b[i]
 
-                elif models.q[i] == uq_value/100:
+                elif models.q[i] == uq:
                     duq = pd.DataFrame({'x': xx, 'y': yy})
                     # uq_pct = int(models.q[i]*100)
                     uq_a = models.a[i]
@@ -251,14 +272,63 @@ if df is not None:
             base_b = ols["b"]
 
             dbs = pd.DataFrame({'x': xx, 'y': yy})
-            return dbs, base_a, base_b, dlq, lq_a, lq_b, duq, uq_a, uq_b
+            return dbs, base_a, base_b, dlq, lq_a, lq_b, duq, uq_a, uq_b, lq, uq
+
+        def scipy_models(data, a_intercept):
+            data.columns = ["NormalStress", "ShearStress"]
+            x = data['NormalStress']
+            y = data['ShearStress']
+            ci_n = ci / 100
+            lq = 0.5 - ci_n / 2
+            uq = 0.5 + ci_n / 2
+            # Convert to percentile point of the normal distribution.
+            # See: https://en.wikipedia.org/wiki/Standard_score
+            pp = (1. + ci_n) / 2.
+            nstd = stats.norm.ppf(pp)
+
+            if fitmethod == fit_selection[0]:
+                popt, pcov = curve_fit(weakfunc, x, y)
+            elif fitmethod == fit_selection[1]:
+                popt, pcov = curve_fit(bartonbandis, x, y)
+            else:
+                popt, pcov = curve_fit(weakfunc, x, y)
+            print(popt, nstd)
+            perr = sqrt(diag(pcov))
+            popt_up = popt + nstd * perr
+            popt_dw = popt - nstd * perr
+
+            x_line = np.arange(min(x), max(x), 1)
+            dbs = pd.DataFrame({'x':x_line})
+            dlq = pd.DataFrame({'x':x_line})
+            duq = pd.DataFrame({'x':x_line})
+            bs_a, bs_b = popt
+            lq_a, lq_b = popt_dw
+            uq_a, uq_b = popt_up
+            print(fitmethod)
+            if fitmethod == fit_selection[0]:
+                dbs['y'] = dbs.apply(lambda x_l: weakfunc(x_l,*popt))
+                dlq['y'] = dlq.apply(lambda x_l: weakfunc(x_l,*popt_dw))
+                duq['y'] = duq.apply(lambda x_l: weakfunc(x_l,*popt_up))
+            elif fitmethod == fit_selection[1]:
+                dbs['y'] = dbs.apply(lambda x_l: bartonbandis(x_l,*popt))
+                dlq['y'] = dlq.apply(lambda x_l: bartonbandis(x_l,*popt_dw))
+                duq['y'] = duq.apply(lambda x_l: bartonbandis(x_l,*popt_up))
+            else:
+                dbs['y'] = dbs.apply(lambda x_l: weakfunc(x_l,*popt))
+                dlq['y'] = dlq.apply(lambda x_l: weakfunc(x_l,*popt_dw))
+                duq['y'] = duq.apply(lambda x_l: weakfunc(x_l,*popt_up))
+
+            return dbs, bs_a, bs_b, dlq, lq_a, lq_b, duq, uq_a, uq_b, lq, uq
 
         if len(x) > 0:
             if fitmethod == fit_selection[0]:
                 data = df1[["NormalStress", "ShearStress"]]
                 a_intercept = intercept_coh
 
-                dbs, bs_a, bs_b, dlq, lq_a, lq_b, duq, uq_a, uq_b = quantile_models(data, a_intercept)
+                if cimethod == ciselection[0]:
+                    dbs, bs_a, bs_b, dlq, lq_a, lq_b, duq, uq_a, uq_b, lq, uq = scipy_models(data, a_intercept)
+                else:
+                    dbs, bs_a, bs_b, dlq, lq_a, lq_b, duq, uq_a, uq_b, lq, uq = quantile_models(data, a_intercept)
 
                 bs_a = round(bs_a,2)
                 bs_b = round(degrees(arctan(bs_b)),2)
@@ -271,6 +341,21 @@ if df is not None:
 
                 val_1 = 'Cohesion'
                 val_2 = 'Friction Angle'
+
+                # ci = 0.95
+
+                # pp = (1. + ci) / 2.
+                # nstd = stats.norm.ppf(pp)
+                # print(nstd)
+
+                # popt, pcov = curve_fit(weakfunc, x, y)
+                # perr = sqrt(diag(pcov))
+                # popt_up = popt + nstd * perr
+                # popt_dw = popt - nstd * perr
+
+                # x_line = np.arange(1, max(x), 1)
+                # dlq2 = pd.DataFrame({'x':x_line})
+                # dlq2['y'] = dlq2.apply(lambda x_l: weakfunc(x_l,*popt_dw))
 
                 # Manual Fit
                 col1, col2, col3 = st.columns(3)
@@ -301,17 +386,29 @@ if df is not None:
             # Barton Bandis:
             elif fitmethod == fit_selection[1]:
 
-                def bartonbandis(x, phir):
-                    return x * tan(radians(phir + inp_jrc * log10(inp_jcs / x)))
-
                 data = df1[["NormalStress", "ShearStress"]]
                 a_intercept = 0
 
                 # dbs, bs_a, bs_b, dlq, lq_a, lq_b, duq, uq_a, uq_b = quantile_models(data, a_intercept)
                 # print(bs_a, bs_b)
+
+                ci = 0.95
+
+                pp = (1. + ci) / 2.
+                nstd = stats.norm.ppf(pp)
+                print(nstd)
+
+                popt, pcov = curve_fit(bartonbandis, x, y)
+                perr = sqrt(diag(pcov))
+                popt_up = popt + nstd * perr
+                popt_dw = popt - nstd * perr
+
+                x_line = np.arange(1, max(x), 1)
+                dlq = pd.DataFrame({'x':x_line})
+                dlq['y'] = dlq.apply(lambda x_l: bartonbandis(x_l,*popt_dw))
+
                 # Auto Fit
-                x0 = np.array([25])
-                params, params_covariance = curve_fit(bartonbandis, x, y,p0=x0, bounds=((0),(90)))
+                params, params_covariance = curve_fit(bartonbandis, x, y, bounds=((0),(90)))
 
                 auto_phir = params[0] # automatic phir, jrc, jcs
                 # signmin = 10**(log10(inp_jcs)-((70-auto_phir)/inp_jrc))
@@ -386,7 +483,10 @@ if df is not None:
 
                 a_intercept = log(intercept_k)
 
-                dbs, bs_a, bs_b, dlq, lq_a, lq_b, duq, uq_a, uq_b = quantile_models(data, a_intercept)
+                if cimethod == ciselection[0]:
+                    dbs, bs_a, bs_b, dlq, lq_a, lq_b, duq, uq_a, uq_b, lq, uq = scipy_models(data, a_intercept)
+                else:
+                    dbs, bs_a, bs_b, dlq, lq_a, lq_b, duq, uq_a, uq_b, lq, uq = quantile_models(data, a_intercept)
 
                 dbs['x'] = exp(dbs['x'])
                 dbs['y'] = exp(dbs['y'])
@@ -454,8 +554,12 @@ if df is not None:
                         mode='lines', name=f'-{lq_sd} Phir St.D',
                         line=dict(dash='dash', color=colors[6])))
 
+                    figd.add_trace(go.Scatter(x=dlq['x'], y=dlq['y'],
+                        mode='lines', name=f'{int(lq*100)}th Quantile',
+                        line=dict(dash='dash', color=colors[6])))
+
                     figd.add_trace(go.Scatter(x=sd_high_curve['x_line'], y=sd_high_curve['y_line'],
-                        mode='lines', name=f'+{uq_sd} Phir St.D',
+                        mode='lines', name=f'{int(uq*100)} th Quantile',
                         line=dict(dash='dash', color=colors[5])))
 
                 # Linear and Power
@@ -465,11 +569,15 @@ if df is not None:
                         line=dict(color='grey')))
 
                     figd.add_trace(go.Scatter(x=dlq['x'], y=dlq['y'],
-                        mode='lines', name=f'{lq_value}% Bound',
+                        mode='lines', name=f'{int(lq*100)}th Quantile',
                         line=dict(dash='dash', color=colors[6])))
 
+                    # figd.add_trace(go.Scatter(x=dlq2['x'], y=dlq2['y'],
+                    #     mode='lines', name=f'{ci}% Bound',
+                    #     line=dict(dash='dash', color=colors[6])))
+
                     figd.add_trace(go.Scatter(x=duq['x'], y=duq['y'],
-                        mode='lines', name=f'{uq_value}% Bound',
+                        mode='lines', name=f'{int(uq*100)}th Quantile',
                         line=dict(dash='dash', color=colors[5])))
 
                 num_dst = len(df1.index)
@@ -546,10 +654,10 @@ if df is not None:
                 to_append = ["Auto Fit - OLS", bs_a, bs_b]
                 new_row = len(dst_summary)
                 dst_summary.loc[new_row] = to_append
-                to_append = [f"Auto Fit - {lq_value}%", lq_a, lq_b]
+                to_append = [f"{int(lq*100)} th Quantile", lq_a, lq_b]
                 new_row = len(dst_summary)
                 dst_summary.loc[new_row] = to_append
-                to_append = [f"Auto Fit - {uq_value}%", uq_a, uq_b]
+                to_append = [f"{int(uq*100)} th Quantile", uq_a, uq_b]
                 new_row = len(dst_summary)
                 dst_summary.loc[new_row] = to_append
                 if not np.isnan(manual_val_1):
@@ -561,10 +669,10 @@ if df is not None:
                 to_append = ["Auto Fit: BB Curve", auto_phir, auto_jrc, auto_jcs]
                 new_row = len(dst_summary)
                 dst_summary.loc[new_row] = to_append
-                to_append = [f"Auto Fit: -{lq_sd} Phir ST.D", phir_sd_low, auto_jrc, auto_jcs]
+                to_append = [f"{int(lq*100)} th Quantile", phir_sd_low, auto_jrc, auto_jcs]
                 new_row = len(dst_summary)
                 dst_summary.loc[new_row] = to_append
-                to_append = [f"Auto Fit: +{uq_sd} Phir ST.D", phir_sd_high, auto_jrc, auto_jcs]
+                to_append = [f"{int(uq*100)} th Quantile", phir_sd_high, auto_jrc, auto_jcs]
                 new_row = len(dst_summary)
                 dst_summary.loc[new_row] = to_append
                 if not np.isnan(manual_val_1):
@@ -1108,6 +1216,106 @@ if df is not None:
         du = du.dropna(axis=1, how='all')
         AgGrid(du)
 
+    # with tab3:
+    if selected == options[2]:
+        st.write('Soil Strength')
+        color_list = ['SampleType', 'Rock Type', 'HoleID']
+
+        ds = df[df['SampleType'].isin(['TXL'])]
+        ds = ds[ds['EffectiveSigma3'].notna()]
+        ds = ds[ds['EffectiveSigma1'].notna()]
+        # print(ds)
+
+        if len(ds['Sigma3'])>0:
+            p_max_o = ds['EffectiveSigma3'].max()
+            p_max = st.sidebar.number_input('Maximum Sigma3', value=p_max_o)
+            ds = ds[ds['EffectiveSigma3']<=p_max]
+
+            if "Project" in ds.columns:
+                project = set(ds['Project'])
+                project_selection = st.sidebar.multiselect("Project", (project))
+                if project_selection: ds = ds[ds['Project'].isin(project_selection)]
+
+            if "Prospect" in ds.columns:
+                prospect = set(ds['Prospect'])
+                prospect_selection = st.sidebar.multiselect("Prospect", (prospect))
+                if prospect_selection: ds = ds[ds['Prospect'].isin(prospect_selection)]
+                color_list.append("Prospect")
+
+            if "Formation" in ds.columns:
+                formation = set(ds['Formation'])
+                formation_selection = st.sidebar.multiselect("Formation", (formation))
+                if formation_selection: ds = ds[ds['Formation'].isin(formation_selection)]
+
+            if "SubFormation" in ds.columns:
+                subformation = set(ds['SubFormation'])
+                subformation_selection = st.sidebar.multiselect("SubFormation", (subformation))
+                if subformation_selection: ds = ds[ds['SubFormation'].isin(subformation_selection)]
+
+            rock_type = set(ds['Rock Type'])
+            rock_selection = st.sidebar.multiselect("Rock Type", (rock_type))
+            if rock_selection: ds = ds[ds['Rock Type'].isin(rock_selection)]
+
+            holeid = set(ds['HoleID'])
+            holeid_selection = st.sidebar.multiselect("Hole ID", (holeid))
+            if holeid_selection: ds = ds[ds['HoleID'].isin(holeid_selection)]
+
+            sampletype = set(ds['SampleType'])
+            testtype_selection = st.sidebar.multiselect("Test type", (sampletype))
+            if testtype_selection: ds = ds[ds['SampleType'].isin(testtype_selection)]
+
+            if "Failure Mode" in ds.columns:
+                failuremode = set(ds['Failure Mode'])
+                failuremode_selection = st.sidebar.multiselect("Failure Mode", (failuremode))
+                if failuremode_selection: ds = ds[ds['Failure Mode'].isin(failuremode_selection)]
+
+            # Auto Fit - Method and dataset
+            col1, col2 = st.columns(2)
+            method_selection = ['Linear Regression']
+            with col1:
+                fit_method = st.radio("Auto Fit method",
+                    method_selection, horizontal=True)
+            with col2:
+                # Figure
+                colormethod_s = st.radio("Color By",
+                    color_list, horizontal=True)
+            # PQ plot
+            ds['P'] = ds.apply(lambda row: (row['EffectiveSigma1']+row['EffectiveSigma3'])/2, axis=1)
+            ds['Q'] = ds.apply(lambda row: (row['EffectiveSigma1']-row['EffectiveSigma3'])/2, axis=1)
+
+            figs = px.scatter(
+                ds, x="EffectiveSigma3", y="EffectiveSigma1",
+                color=colormethod_s, color_discrete_sequence=colors)
+            figs.update_traces(marker=dict(size=9))
+
+            num_txl = len(ds.index)
+            figs.update_layout(
+                    title_text=f"No. of Data: {num_txl}",
+                    plot_bgcolor='#FFFFFF',
+                    paper_bgcolor='#FFFFFF',
+                    height=600,)
+
+            figs.update_xaxes(title_text='Effective Sigma 3', gridcolor='lightgrey',
+                zeroline=True, zerolinewidth=3, zerolinecolor='lightgrey',
+                tickformat=",.0f", ticks="outside", ticklen=5)
+            figs.update_yaxes(title_text='Effective Sigma 1', gridcolor='lightgrey',
+                zeroline=True, zerolinewidth=3, zerolinecolor='lightgrey',
+                tickformat=",.0f", ticks="outside", ticklen=5,
+                range=[0,max(ds['EffectiveSigma1'])*1.05])
+            figs.add_shape(
+                type="rect", xref="paper", yref="paper",
+                x0=0, y0=0, x1=1.0, y1=1.0,
+                line=dict(color="black", width=2))
+
+        if fig_method==fig_selection[0]:
+            st.plotly_chart(figs, use_container_width=True)
+        # else:
+        #     st.bokeh_chart(p, use_container_width=True)
+
+        # Table of data
+        ds = ds.iloc[:,1:]
+        ds = ds.dropna(axis=1, how='all')
+        AgGrid(ds)
 
 else:
     st.header('Select a File to start')
