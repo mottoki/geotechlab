@@ -39,14 +39,14 @@ colors = px.colors.qualitative.T10
 
 st.set_page_config(page_title='Geotech Lab', page_icon=None, layout="wide")
 
-# hide_table_row_index = """
-#     <style>
-#     footer {visibility: hidden;}
-#     header {visibility: hidden;}
-#     </style>
-#     """
+hide_table_row_index = """
+    <style>
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
+    </style>
+    """
 
-# st.markdown(hide_table_row_index, unsafe_allow_html=True)
+st.markdown(hide_table_row_index, unsafe_allow_html=True)
 
 
 pd.set_option('display.max_columns', None)
