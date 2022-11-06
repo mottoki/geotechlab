@@ -6,8 +6,8 @@ import altair as alt
 import numpy as np
 
 def scatter_altair(title, rotation, xcol, ycol, colorcol, df, dfub, dflb, dfb, dman, man_on):
-    selection = alt.selection_multi(fields=[colorcol], bind='legend')
-    # selection = alt.selection_interval()
+    # selection = alt.selection_multi(fields=[colorcol], bind='legend')
+    selection = alt.selection_interval()
     pnt=alt.Chart(df, title=title).mark_circle(size=80).encode(
         x=alt.X(xcol, sort=None, title=xcol), # scale=alt.Scale(type='log', base=10, domain=[0, 2])),
         y=alt.Y(ycol, axis=alt.Axis(grid=True), title=ycol),
@@ -200,17 +200,42 @@ def scatter_altair_u(title, rotation, xcol, ycol, colorcol, df, dfub, dflb, dfb,
 
 #     p.legend.location = "top_left"
 
-# # Plotly
-# figu = px.scatter(
-#     du, x="Sigma3", y="PeakSigma1",
-#     color=colormethod_u, color_discrete_sequence=colors)
-# figu.update_traces(marker=dict(size=9))
+# Plotly
+def scatter_plotly(title, rotation, xcol, ycol, colorcol, df, dfub, dflb, dfb, dman, man_on):
+    colors = px.colors.qualitative.T10
+    colors_selected = ["rgba(99,110,250,0.8)", "rgba(99,110,250,0.2)"]
+    num_set = len(colorcol)
+    # fig = px.scatter(
+    #     df, x=xcol, y=ycol,
+    #     color=colorcol, color_discrete_sequence=colors)
+    # fig.update_traces(marker=dict(size=9))
 
-# figu.add_trace(
-#     go.Scatter(x=dbs['x'], y=dbs['y'],
-#         mode='lines', name=f'Linear Regression',
-#         line=dict(color=colors[-1])))
+    fig = go.Figure()
+    if dfb is not None:
+        fig.add_trace(go.Scatter(x=dfb['x'], y=dfb['y'],
+            mode='lines', name=f'Linear Reg.',
+            line=dict(color='black')))
 
+    # Find the different groups
+    groups = df[colorcol].unique()
+    groups = sorted(groups, reverse=True)
+
+    # Create as many traces as different groups there are and save them in data list
+    i=0
+    for group in groups:
+        df_group = df[df[colorcol] == group]
+        trace = go.Scatter(x=df_group[xcol],
+            y=df_group[ycol],
+            mode='markers',
+            name=str(group),
+            marker=dict(color=colors_selected[i],
+                size=9),)
+            # marker=dict(color=colors[i], size=9),)
+        fig.add_trace(trace)
+        i += 1
+    # fig.add_traces(
+    #     list(px.line(dfb, x='x',y='y').select_traces()))
+    fig.data = [fig.data[i] for i in reversed(range(len(fig.data)))]
 # figu.add_trace(
 #     go.Scatter(x=dlq['x'], y=dlq['y'],
 #         mode='lines', name=f'{int(lq_value)}% Bound',
@@ -256,24 +281,27 @@ def scatter_altair_u(title, rotation, xcol, ycol, colorcol, df, dfub, dflb, dfb,
 #         name='UCS box plot', quartilemethod="linear",
 #         marker_color = 'indianred'))
 
-# num_ucs = len(du.index)
-# figu.update_layout(
-#         title_text=f"No. of Data: {num_ucs}",
-#         plot_bgcolor='#FFFFFF',
-#         paper_bgcolor='#FFFFFF',
-#         height=600,)
+    num_data = len(df.index)
+    fig.update_layout(
+        title_text=f"No. of Data: {num_data}",
+        plot_bgcolor='#FFFFFF',
+        paper_bgcolor='#FFFFFF',
+        height=600,
+        dragmode='lasso')
 
-# figu.update_xaxes(title_text='Sigma 3', gridcolor='lightgrey',
-#     zeroline=True, zerolinewidth=3, zerolinecolor='lightgrey',
-#     tickformat=",.0f", ticks="outside", ticklen=5)
-# figu.update_yaxes(title_text='Peak Sigma 1', gridcolor='lightgrey',
-#     zeroline=True, zerolinewidth=3, zerolinecolor='lightgrey',
-#     tickformat=",.0f", ticks="outside", ticklen=5,
-#     range=[0,max(du['PeakSigma1'])*1.05])
-# figu.add_shape(
-#     type="rect", xref="paper", yref="paper",
-#     x0=0, y0=0, x1=1.0, y1=1.0,
-#     line=dict(color="black", width=2))
+    fig.update_xaxes(title_text=xcol, gridcolor='lightgrey',
+        zeroline=True, zerolinewidth=3, zerolinecolor='lightgrey',
+        tickformat=",.0f", ticks="outside", ticklen=5,
+        range=[0,max(df[xcol])*1.05])
+    fig.update_yaxes(title_text=ycol, gridcolor='lightgrey',
+        zeroline=True, zerolinewidth=3, zerolinecolor='lightgrey',
+        tickformat=",.0f", ticks="outside", ticklen=5,
+        range=[0,max(df[ycol])*1.05])
+    fig.add_shape(
+        type="rect", xref="paper", yref="paper",
+        x0=0, y0=0, x1=1.0, y1=1.0,
+        line=dict(color="black", width=2))
+    return fig
 
 # # Manual Fit Curve
 # if manual_on == 'on':

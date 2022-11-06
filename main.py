@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objs as go
 import plotly.express as px
+from streamlit_plotly_events import plotly_events
 from scipy.optimize import curve_fit
 # import statsmodels.api as sm
 import statsmodels.formula.api as smf
@@ -13,8 +14,9 @@ from numpy import sin, cos, tan, arcsin, arccos, arctan, radians, degrees, sqrt,
 from streamlit_option_menu import option_menu
 
 from bokeh.plotting import figure
-from bokeh.models import ColumnDataSource, HoverTool, LinearColorMapper, Band
+from bokeh.models import ColumnDataSource, HoverTool, LinearColorMapper, Band, CustomJS
 import bokeh.models as bmo
+from streamlit_bokeh_events import streamlit_bokeh_events
 
 import altair as alt
 
@@ -23,7 +25,7 @@ from st_aggrid import AgGrid
 from filter_func import filter_df
 from dst_func import weakfunc, powercurve, bartonbandis, fit_model, quantile_models, scipy_models
 from ucs_func import objective, calc_hoek, get_curve_df, lin_reg, get_linear_df, quantile_models_ucs
-from graph_func import scatter_altair, scatter_altair_u
+from graph_func import scatter_altair, scatter_altair_u, scatter_plotly
 
 # ------------------ INPUT --------------------------------
 base_colors = {
@@ -35,16 +37,16 @@ base_colors = {
 
 colors = px.colors.qualitative.T10
 
-st.set_page_config(layout="wide")
+st.set_page_config(page_title='Geotech Lab', page_icon=None, layout="wide")
 
-hide_table_row_index = """
-    <style>
-    footer {visibility: hidden;}
-    header {visibility: hidden;}
-    </style>
-    """
+# hide_table_row_index = """
+#     <style>
+#     footer {visibility: hidden;}
+#     header {visibility: hidden;}
+#     </style>
+#     """
 
-st.markdown(hide_table_row_index, unsafe_allow_html=True)
+# st.markdown(hide_table_row_index, unsafe_allow_html=True)
 
 
 pd.set_option('display.max_columns', None)
@@ -207,10 +209,8 @@ if df is not None:
 
             # Filter the dataset
             df1, color_list = filter_df(df1, color_list, all_cols, 'DST')
-
             x = df1[colnormstr]
             y = df1[colshearstr]
-
             col1, col2, col3 = st.columns(3)
 
             fit_selection = ('Linear', 'Power')
@@ -382,7 +382,6 @@ if df is not None:
         du[colfailang] = pd.to_numeric(du[colfailang], errors='coerce')
         du.loc[du[colsamptype]=='UCS', colsig3] = 0
         du.loc[du[colsamptype]=='UCS', colpkstr] = du[colucs]
-        # print(du[du[colsamptype]=='UCS'].head())
         du = du[du[colsig3].notna()]
         du = du[du[colpkstr].notna()]
 
@@ -560,13 +559,23 @@ if df is not None:
 
     # ---------------- Tab3: Soil Strength ---------------------------
     if selected == options[2]:
+
+        @st.experimental_singleton
+        def load_data(df):
+            return df[df[colsamptype].isin(['TXL'])]
+
         color_list = [colsamptype, colrocktype, colid]
 
-        ds = df[df[colsamptype].isin(['TXL'])]
+        # Initialise session state
+        if "txl_query" not in st.session_state:
+            st.session_state["txl_query"] = set()
+
+        # ds = df[df[colsamptype].isin(['TXL'])]
+        ds = load_data(df)
+
         if len(ds)>0:
             ds = ds[ds[coleffsig3].notna()]
             ds = ds[ds[coleffsig1].notna()]
-            # print(ds)
             p_max_o = ds[coleffsig3].max()
             p_max = st.sidebar.number_input('Maximum Sigma3', value=p_max_o)
             ds = ds[ds[coleffsig3]<=p_max]
@@ -598,8 +607,13 @@ if df is not None:
             # PQ plot
             ds['P'] = ds.apply(lambda row: (row[coleffsig1]+row[coleffsig3])/2, axis=1)
             ds['Q'] = ds.apply(lambda row: (row[coleffsig1]-row[coleffsig3])/2, axis=1)
-
-            data = ds[["P", "Q"]]
+            ds['esig3-esig1'] = (ds[coleffsig3].astype(int).astype(str)+"-"+ds[coleffsig1].astype(int).astype(str))
+            ds['selected'] = True
+            # print(st.session_state['txl_query'])
+            if st.session_state["txl_query"]:
+                ds.loc[~ds["esig3-esig1"].isin(st.session_state["txl_query"]), "selected"] = False
+            # print(ds[["P","Q", "P-Q", "selected"]].head())
+            data = ds[ds['selected']==True][["P", "Q"]]
             a_intercept = intercept_int
 
             dbs, bs_a, bs_b, dlq, lq_a, lq_b, duq, uq_a, uq_b, lq, uq = quantile_models(data, "P", "Q", a_intercept, lq_value, uq_value)
@@ -650,6 +664,28 @@ if df is not None:
                 dman = pd.DataFrame()
             figalts = scatter_altair(title, rotation, 'P', 'Q', colormethod_s, ds, duq, dlq, dbs, dman, manual_on_s)
 
+            # Plotly
+            col1, col2 = st.columns([1,1])
+            with col1:
+                fige = scatter_plotly(title, rotation, coleffsig3, coleffsig1, 'selected', ds, None, None, None, None, None)
+                selected_points = plotly_events(fige, select_event=True,  override_height=600)
+            with col2:
+                figpl = scatter_plotly(title, rotation, 'P', 'Q', 'selected', ds, duq, dlq, dbs, dman, manual_on_s)
+                st.plotly_chart(figpl, use_container_width=True)
+                # selected_points = plotly_events(figpl, select_event=True,  override_height=600)
+            dsel = pd.DataFrame(selected_points)
+            current_query = {}
+            current_query["txl_query"] = {f"{int(el['x'])}-{int(el['y'])}" for el in selected_points}
+            # Update session state
+            rerun = False
+            if current_query["txl_query"] - st.session_state["txl_query"]:
+                st.session_state['txl_query'] = current_query["txl_query"]
+                rerun = True
+            # print(current_query)
+            if rerun:
+                st.experimental_rerun()
+            # st.write(dsel)
+
             # Summary Table
             txl_summary = pd.DataFrame(columns=["Method", val_1, val_2])
             to_append = ["Auto Fit - OLS", bs_a, bs_b]
@@ -669,7 +705,7 @@ if df is not None:
             figalts = alt.layer()
             txl_summary = pd.DataFrame()
 
-        st.altair_chart(figalts, use_container_width=True)
+        # st.altair_chart(figalts, use_container_width=True)
 
         st.markdown("**Shear Strength**")
 
